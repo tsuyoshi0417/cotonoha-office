@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>言ノ葉 経費</title>
+<style>
+  :root{
+    --bg:#f4f1e8; --panel:#fbf9f3; --panel2:#efe9da;
+    --ink:#2b2823; --sub:#7c7464; --line:#e0d9c8;
+    --accent:#3d7a8a; --accent2:#a6822f; --ok:#3d7a8a; --warn:#a85a3c;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif;
+    padding:14px;max-width:760px;margin:0 auto}
+  h1{font-size:18px;font-weight:700;margin:2px 0 2px;letter-spacing:.04em}
+  .tag{color:var(--sub);font-size:12px;margin-bottom:12px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+  label{display:block;font-size:12px;color:var(--sub);margin:0 0 4px}
+  input,textarea,select{width:100%;background:var(--panel2);border:1px solid var(--line);
+    color:var(--ink);border-radius:10px;padding:10px;font-size:16px;font-family:inherit}
+  .row{display:flex;gap:10px}.row>div{flex:1}
+  button{border:0;border-radius:12px;padding:14px;font-size:16px;font-weight:700;
+    color:var(--ink);background:var(--panel2);border:1px solid var(--line);cursor:pointer;flex:1;font-family:inherit}
+  button:active{transform:scale(.98)}
+  .save{background:var(--ok);border-color:transparent;color:#ffffff}
+  .acts{display:flex;gap:10px;margin-top:8px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:2px}
+  .chip{flex:0 0 auto;padding:11px 16px;font-size:14px;font-weight:600;background:var(--panel2);
+    color:var(--ink);border:1px solid var(--line);border-radius:999px;min-height:44px}
+  .chip.sel{background:var(--accent);color:#ffffff;border-color:transparent}
+  /* 今月サマリー */
+  .summary{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px;
+    display:flex;align-items:baseline;justify-content:space-between}
+  .summary .lbl{font-size:13px;color:var(--sub)}
+  .summary .amt{font-size:30px;font-weight:700;color:var(--accent2);font-variant-numeric:tabular-nums}
+  /* 一覧 */
+  .list .item{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}
+  .list .item:last-child{border-bottom:0}
+  .list .cat{flex:0 0 auto;font-size:11px;font-weight:700;color:var(--accent);background:var(--panel2);
+    border:1px solid var(--line);border-radius:999px;padding:3px 9px}
+  .list .mid{flex:1;min-width:0}
+  .list .mid .pay{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .list .mid .dt{font-size:11px;color:var(--sub)}
+  .list .amt{flex:0 0 auto;font-variant-numeric:tabular-nums;font-weight:700;color:var(--ink)}
+  .list .del{flex:0 0 auto;width:auto;padding:6px 10px;font-size:12px;background:transparent;color:var(--warn);border:1px solid var(--line)}
+  .empty{color:var(--sub);font-size:13px}
+  /* 集計 */
+  .bd{display:flex;justify-content:space-between;font-size:14px;padding:7px 2px;border-bottom:1px solid var(--line)}
+  .bd:last-child{border-bottom:0}
+  .bd b{font-variant-numeric:tabular-nums;color:var(--accent2)}
+  .bd.total{font-weight:700;border-top:2px solid var(--line);border-bottom:0;margin-top:4px;padding-top:10px}
+  .bd.total b{color:var(--ink);font-size:17px}
+  .note{color:var(--sub);font-size:11px;line-height:1.6;margin-top:6px}
+  .note b{color:var(--ink)}
+  .sync{display:none;font-size:12px;color:var(--sub);margin-top:6px}
+  .err{display:none;background:#f7e3da;border:1px solid var(--warn);color:#8a3d23;
+    padding:10px;border-radius:10px;font-size:12px;margin-bottom:12px;white-space:pre-wrap}
+</style>
+<!-- Firebase compat CDN（焙煎アプリと同じ・安定版固定）。読込失敗してもアプリ本体は動く（JSはtry/catchで隔離）-->
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+</head>
+<body>
+  <div class="err" id="err"></div>
+  <h1>言ノ葉 経費 <span style="color:var(--sub);font-size:12px">v0</span></h1>
+  <div class="tag">領収書・経費の台帳｜お金のデータ＝本人だけ（ログインで本人のクラウドに同期）</div>
+
+  <!-- 今月サマリー -->
+  <div class="summary">
+    <div><div class="lbl" id="sumLabel">今月の経費</div></div>
+    <div class="amt" id="sumAmount">¥0</div>
+  </div>
+
+  <!-- 入力 -->
+  <div class="panel">
+    <div class="row">
+      <div><label>日付</label><input id="exDate" type="date"></div>
+      <div><label>金額（円）</label><input id="exAmount" type="number" inputmode="numeric" placeholder="例 1980"></div>
+    </div>
+    <label style="margin-top:10px">費目（選ぶ）</label>
+    <div class="chips" id="catChips"></div>
+    <div class="row" style="margin-top:10px">
+      <div><label>支払先・内容</label><input id="exPayee" placeholder="例：松屋珈琲／生豆エチオピア"></div>
+    </div>
+    <label style="margin-top:10px">メモ（任意）</label>
+    <input id="exMemo" placeholder="任意">
+    <div class="acts">
+      <button type="button" class="save" id="saveBtn">この経費を保存</button>
+    </div>
+    <div class="note">保存先＝この端末＋（ログイン中なら）本人のクラウド。<b>CSVが本当のバックアップ。</b></div>
+  </div>
+
+  <!-- 月別・費目別 集計 -->
+  <div class="panel">
+    <label>集計する月</label>
+    <select id="monthSel"></select>
+    <div id="breakdown" style="margin-top:10px"></div>
+  </div>
+
+  <!-- 一覧 -->
+  <div class="panel">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <label style="margin:0">明細（新しい順）</label>
+      <button type="button" id="csvBtn" style="flex:0 0 auto;width:auto;padding:8px 14px;font-size:13px">CSV出力</button>
+    </div>
+    <div class="list" id="list"><div class="empty">まだ無し</div></div>
+  </div>
+
+  <!-- クラウド同期 -->
+  <div class="panel" id="syncPanel" style="display:none">
+    <div class="acts">
+      <button type="button" id="loginBtn">Googleでログイン（クラウド同期）</button>
+      <button type="button" id="logoutBtn" style="display:none;flex:.6">ログアウト</button>
+    </div>
+    <div class="sync" id="syncState" style="display:block">クラウド同期：未ログイン</div>
+    <div class="note">お金のデータは本人のGoogleアカウント配下（users/{uid}/expenses）に入り、本人だけが読める。</div>
+  </div>
+
+<script>
+window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.style.display="block";e.textContent="エラー: "+m+" ("+l+"行)";}};
+(function(){
+  "use strict";
+  function $(id){return document.getElementById(id);}
+  function nn(v){return (v===undefined||v===null)?"":v;}
+  function yen(n){ n=Math.round(Number(n)||0); return "¥"+String(n).replace(/\B(?=(\d{3})+(?!\d))/g,","); }
+
+  /* 費目（珈琲事業）。ここを足し引きすれば費目を調整できる1か所。 */
+  var CATS=["仕入(生豆)","資材","機材","燃料","送料","出店・イベント","学習","通信・サブスク","雑費"];
+  var selCat="";
+
+  /* ---- localStorage ---- */
+  function getList(){try{return JSON.parse(localStorage.getItem("cotonoha_expenses")||"[]");}catch(e){return [];}}
+  function setList(l){try{localStorage.setItem("cotonoha_expenses",JSON.stringify(l||[]));}catch(e){}}
+  function recId(x){ return (x&&x.id)?String(x.id):(String((x&&x.date)||"")+"|"+String((x&&x.amount)||"")+"|"+String((x&&x.payee)||"")); }
+
+  /* ---- 費目チップ ---- */
+  function buildCats(){
+    var box=$("catChips"); var html="";
+    for(var i=0;i<CATS.length;i++){ html+='<span class="chip excat" data-v="'+CATS[i].replace(/"/g,"&quot;")+'">'+CATS[i].replace(/</g,"&lt;")+'</span>'; }
+    box.innerHTML=html;
+    var chips=box.querySelectorAll(".excat");
+    for(var j=0;j<chips.length;j++){(function(c){
+      c.addEventListener("click",function(){
+        selCat=c.getAttribute("data-v");
+        var all=box.querySelectorAll(".excat");
+        for(var k=0;k<all.length;k++){ if(all[k].getAttribute("data-v")===selCat)all[k].classList.add("sel");else all[k].classList.remove("sel"); }
+      });
+    })(chips[j]);}
+  }
+
+  /* ---- 今日の日付をYYYY-MM-DD（端末TZ）---- */
+  function todayStr(){ var d=new Date(); return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2); }
+  function ym(dateStr){ return String(dateStr||"").slice(0,7); } // YYYY-MM
+
+  /* ---- 保存 ---- */
+  function saveExpense(){
+    var date=$("exDate").value||todayStr();
+    var amount=parseFloat($("exAmount").value);
+    if(isNaN(amount)||amount<=0){ alert("金額を入れてね"); return; }
+    if(!selCat){ alert("費目を選んでね"); return; }
+    var rec={ id:"ex|"+Date.now(), date:date, amount:Math.round(amount), category:selCat,
+              payee:($("exPayee").value||"").trim(), memo:($("exMemo").value||"").trim() };
+    var list=getList(); list.unshift(rec); setList(list);
+    Cloud.pushOne(rec);
+    refreshAll();
+    /* 次の入力のため金額・支払先・メモはクリア（日付と費目は残す＝連続入力しやすい）*/
+    $("exAmount").value="";$("exPayee").value="";$("exMemo").value="";
+    alert("保存した"+(Cloud.isOn()?"（端末＋クラウド）":"（この端末内）")+"。バックアップはCSVで。");
+  }
+
+  /* ---- 月セレクタ（データのある月＋今月）---- */
+  function buildMonths(){
+    var sel=$("monthSel"); var list=getList(), seen={}, months=[];
+    var tm=ym(todayStr()); seen[tm]=1; months.push(tm);
+    for(var i=0;i<list.length;i++){ var m=ym(list[i].date); if(m&&!seen[m]){seen[m]=1;months.push(m);} }
+    months.sort(function(a,b){return a<b?1:(a>b?-1:0);}); // 新しい順
+    var cur=sel.value;
+    var html="";
+    for(var j=0;j<months.length;j++){ var mm=months[j]; html+='<option value="'+mm+'">'+mm.replace("-","年")+"月"+'</option>'; }
+    sel.innerHTML=html;
+    if(cur && months.indexOf(cur)>=0){ sel.value=cur; } else { sel.value=months[0]; }
+  }
+
+  /* ---- 集計（選択月の費目別＋合計）＋今月サマリー ---- */
+  function renderBreakdown(){
+    var sel=$("monthSel"), m=sel.value||ym(todayStr());
+    var list=getList(), by={}, total=0;
+    for(var i=0;i<list.length;i++){ var x=list[i]; if(ym(x.date)!==m)continue; var c=x.category||"雑費"; by[c]=(by[c]||0)+(Number(x.amount)||0); total+=(Number(x.amount)||0); }
+    var box=$("breakdown"), html="";
+    var keys=[]; for(var k in by){ if(by.hasOwnProperty(k))keys.push(k); }
+    keys.sort(function(a,b){return by[b]-by[a];}); // 多い順
+    if(!keys.length){ html='<div class="empty">この月の経費はまだ無し</div>'; }
+    else{
+      for(var j=0;j<keys.length;j++){ html+='<div class="bd"><span>'+keys[j].replace(/</g,"&lt;")+'</span><b>'+yen(by[keys[j]])+'</b></div>'; }
+      html+='<div class="bd total"><span>合計</span><b>'+yen(total)+'</b></div>';
+    }
+    box.innerHTML=html;
+  }
+  function renderSummary(){
+    var tm=ym(todayStr()), list=getList(), total=0;
+    for(var i=0;i<list.length;i++){ if(ym(list[i].date)===tm)total+=(Number(list[i].amount)||0); }
+    $("sumAmount").textContent=yen(total);
+    $("sumLabel").textContent=tm.replace("-","年")+"月の経費";
+  }
+
+  /* ---- 明細一覧 ---- */
+  function renderList(){
+    var list=getList(), box=$("list");
+    if(!list.length){ box.innerHTML='<div class="empty">まだ無し</div>'; return; }
+    var html="";
+    for(var i=0;i<Math.min(100,list.length);i++){ var x=list[i];
+      var rid=String(recId(x)).replace(/"/g,"&quot;");
+      var pay=(x.payee||"(内容なし)")+(x.memo?(" ・"+x.memo):"");
+      html+='<div class="item"><span class="cat">'+String(x.category||"").replace(/</g,"&lt;")+'</span>'+
+        '<div class="mid"><div class="pay">'+String(pay).replace(/</g,"&lt;")+'</div><div class="dt">'+String(x.date||"")+'</div></div>'+
+        '<span class="amt">'+yen(x.amount)+'</span>'+
+        '<button type="button" class="del" data-id="'+rid+'">削除</button></div>';
+    }
+    box.innerHTML=html;
+    var dels=box.querySelectorAll(".del");
+    for(var k=0;k<dels.length;k++){(function(b){ b.addEventListener("click",function(){ deleteExpense(b.getAttribute("data-id")); }); })(dels[k]);}
+  }
+  function deleteExpense(id){
+    if(!confirm("この経費を削除する？（元に戻せません）"))return;
+    var list=getList(), out=[];
+    for(var i=0;i<list.length;i++){ if(String(recId(list[i]))!==String(id))out.push(list[i]); }
+    setList(out); Cloud.deleteOne(id); refreshAll();
+  }
+
+  /* ---- CSV出力（全件・会計/申告用）---- */
+  function exportCSV(){
+    var list=getList();
+    function c(v){return String(nn(v)).replace(/[\n,]/g," ");}
+    var head=["日付","費目","金額","支払先・内容","メモ"];
+    var lines=[head.join(",")];
+    for(var i=0;i<list.length;i++){ var x=list[i]; lines.push([c(x.date),c(x.category),nn(x.amount),c(x.payee),c(x.memo)].join(",")); }
+    var blob=new Blob(["﻿"+lines.join("\n")],{type:"text/csv"});
+    var a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+    a.download="経費_"+todayStr()+".csv";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  }
+
+  function refreshAll(){ buildMonths(); renderBreakdown(); renderSummary(); renderList(); }
+
+  /* ============================================================
+     クラウド同期（Firebase RTDB＋Googleログイン）。焙煎アプリと同作法。
+     - 失敗してもアプリ本体は完全に動く（全部try/catchで隔離）
+     - 未ログイン＝localStorageだけ
+     - ログイン中＝/users/{uid}/expenses にミラー、起動時にunion統合
+     ============================================================ */
+  var Cloud=(function(){
+    var FB={
+      apiKey:"AIzaSyBrxV8AMiizPv6eCOayGNscb335Hifokko",
+      authDomain:"cotonoha-3812d.firebaseapp.com",
+      projectId:"cotonoha-3812d",
+      storageBucket:"cotonoha-3812d.firebasestorage.app",
+      messagingSenderId:"356717785691",
+      appId:"1:356717785691:web:7b1526c49b0580d9efc57e",
+      databaseURL:"https://cotonoha-3812d-default-rtdb.firebaseio.com"
+    };
+    var ready=false, auth=null, db=null, uid=null, syncing=false;
+    function setState(t){ var el=$("syncState"); if(el)el.textContent="クラウド同期："+t; }
+    function showButtons(loggedIn){ var lin=$("loginBtn"),lout=$("logoutBtn"); if(lin)lin.style.display=loggedIn?"none":""; if(lout)lout.style.display=loggedIn?"":"none"; }
+    function safeKey(id){ return String(id).replace(/[.#$\[\]\/]/g,"_"); }
+    /* 内容の濃さ（競合時にどちらを残すか）*/
+    function recScore(x){ var s=0; if(nn(x&&x.amount)!=="")s++; if(nn(x&&x.payee)!=="")s++; if(nn(x&&x.memo)!=="")s++; if(nn(x&&x.category)!=="")s++; return s; }
+    function mergeLists(a,b){
+      var map={},order=[],lists=[a||[],b||[]],L,j,x,id;
+      for(L=0;L<lists.length;L++){ for(j=0;j<lists[L].length;j++){ x=lists[L][j]; id=recId(x);
+        if(!map[id]){ map[id]=x; order.push(id); } else if(recScore(x)>recScore(map[id])){ map[id]=x; } } }
+      var out=[]; for(var i=0;i<order.length;i++)out.push(map[order[i]]);
+      out.sort(function(p,q){ return String(q.date||"")<String(p.date||"")?-1:(String(q.date||"")>String(p.date||"")?1:0); });
+      return out;
+    }
+    function init(){
+      try{
+        if(typeof firebase==="undefined"||!firebase.initializeApp){ setState("CDN読込に失敗（オフラインで通常動作）"); return; }
+        if(!firebase.apps||!firebase.apps.length){ firebase.initializeApp(FB); }
+        auth=firebase.auth(); db=firebase.database(); ready=true;
+        var panel=$("syncPanel"); if(panel)panel.style.display="block";
+        auth.getRedirectResult().catch(function(){});
+        auth.onAuthStateChanged(function(user){
+          if(user){ uid=user.uid; setState("ログイン中（"+(user.displayName||user.email||"あなた")+"）"); showButtons(true); pull(); }
+          else { uid=null; setState("未ログイン"); showButtons(false); }
+        });
+      }catch(e){ setState("初期化に失敗（オフラインで通常動作）"); }
+    }
+    function login(){
+      try{
+        if(!ready){ alert("クラウド同期はまだ準備中。少し待ってもう一度。"); return; }
+        var provider=new firebase.auth.GoogleAuthProvider();
+        var standalone=(window.navigator.standalone===true)||(window.matchMedia&&window.matchMedia("(display-mode: standalone)").matches);
+        if(standalone){ auth.signInWithRedirect(provider); }
+        else { auth.signInWithPopup(provider).catch(function(){ auth.signInWithRedirect(provider); }); }
+      }catch(e){ alert("ログインに失敗："+(e&&e.message?e.message:e)); }
+    }
+    function logout(){ try{ if(auth)auth.signOut(); }catch(e){} }
+    function pull(){
+      if(!ready||!uid||syncing)return; syncing=true;
+      try{
+        db.ref("users/"+uid+"/expenses").once("value").then(function(snap){
+          var cloud=[], val=snap.val();
+          if(val){ for(var k in val){ if(val.hasOwnProperty(k))cloud.push(val[k]); } }
+          var merged=mergeLists(getList(), cloud);
+          setList(merged); refreshAll(); pushAll(merged);
+          setState("同期済み（"+merged.length+"件）"); syncing=false;
+        }).catch(function(){ setState("読込エラー（ローカルで動作）"); syncing=false; });
+      }catch(e){ setState("読込エラー（ローカルで動作）"); syncing=false; }
+    }
+    function pushAll(list){ if(!ready||!uid)return; try{ var obj={}; for(var i=0;i<list.length;i++){ obj[safeKey(recId(list[i]))]=list[i]; } db.ref("users/"+uid+"/expenses").set(obj).catch(function(){}); }catch(e){} }
+    function pushOne(rec){ if(!ready||!uid||!rec)return; try{ db.ref("users/"+uid+"/expenses/"+safeKey(recId(rec))).set(rec).catch(function(){}); }catch(e){} }
+    function deleteOne(id){ if(!ready||!uid||!id)return; try{ db.ref("users/"+uid+"/expenses/"+safeKey(id)).remove().catch(function(){}); }catch(e){} }
+    return { init:init, login:login, logout:logout, pushOne:pushOne, deleteOne:deleteOne, isOn:function(){return !!(ready&&uid);} };
+  })();
+
+  /* ---- 初期化 ---- */
+  buildCats();
+  $("exDate").value=todayStr();
+  $("saveBtn").addEventListener("click",saveExpense);
+  $("csvBtn").addEventListener("click",exportCSV);
+  $("monthSel").addEventListener("change",renderBreakdown);
+  var _lin=$("loginBtn"); if(_lin)_lin.addEventListener("click",function(){Cloud.login();});
+  var _lout=$("logoutBtn"); if(_lout)_lout.addEventListener("click",function(){Cloud.logout();});
+  refreshAll();
+  Cloud.init();
+})();
+</script>
+</body>
+</html>
