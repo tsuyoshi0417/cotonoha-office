@@ -181,12 +181,44 @@
     </div>
   </div><!-- /modeInventory -->
 
-  <!-- ============ 経営タブ（プレースホルダ） ============ -->
+  <!-- ============ 経営タブ ============ -->
   <div class="mode" id="modeManage">
+
+    <!-- 月セレクタ -->
     <div class="panel">
-      <label style="margin:0 0 6px">経営</label>
-      <div class="empty">次に作る（粗利・原価・資金繰りなどをここに）。</div>
+      <label>見る月</label>
+      <select id="mgMonthSel"></select>
     </div>
+
+    <!-- 今月サマリー（読むだけ・自動集計） -->
+    <div class="panel">
+      <div class="bd"><span>売上</span><b id="mgSales">¥0</b></div>
+      <div class="bd"><span>経費</span><b id="mgExpense">¥0</b></div>
+      <div class="bd total"><span id="mgProfitLabel">粗利（売上−経費）</span><b id="mgProfit">¥0</b></div>
+      <div class="bd" style="border-top:1px solid var(--line);margin-top:6px;padding-top:10px"><span>在庫評価額（現時点・原価）</span><b id="mgInv">¥0</b></div>
+      <div class="note">売上は下で手入力した分だけ。<b>注文記録の自動集計はまだ無い＝売上データは少ない。</b>在庫評価額は月に関係なく現時点の在庫合計。</div>
+    </div>
+
+    <!-- 売上の簡易入力 -->
+    <div class="panel">
+      <div class="row">
+        <div><label>日付</label><input id="slDate" type="date"></div>
+        <div><label>金額（円）</label><input id="slAmount" type="number" inputmode="numeric" placeholder="例 2500"></div>
+      </div>
+      <label style="margin-top:10px">メモ（任意）</label>
+      <input id="slMemo" placeholder="例：マルシェ／ドリップバッグ10袋">
+      <div class="acts">
+        <button type="button" class="save" id="slSaveBtn">この売上を保存</button>
+      </div>
+      <div class="note">保存先＝この端末＋（ログイン中なら）本人のクラウド。</div>
+    </div>
+
+    <!-- 売上一覧 -->
+    <div class="panel">
+      <label style="margin:0 0 8px">売上明細（新しい順）</label>
+      <div class="list" id="slList"><div class="empty">まだ無し</div></div>
+    </div>
+
   </div><!-- /modeManage -->
 
   <!-- クラウド同期 -->
@@ -196,7 +228,7 @@
       <button type="button" id="logoutBtn" style="display:none;flex:.6">ログアウト</button>
     </div>
     <div class="sync" id="syncState" style="display:block">クラウド同期：未ログイン</div>
-    <div class="note">データは本人のGoogleアカウント配下（users/{uid}/expenses・/inventory）に入り、本人だけが読める。</div>
+    <div class="note">データは本人のGoogleアカウント配下（users/{uid}/expenses・/inventory・/sales）に入り、本人だけが読める。</div>
   </div>
 
 <script>
@@ -410,6 +442,77 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
   }
   function refreshInv(){ renderInvSummary(); renderInv(); }
 
+  /* ============================================================
+     売上（cotonoha_sales ＋ RTDB users/{uid}/sales）。v0最小。
+     レコード={id:"sale|<時刻>", date, amount, memo}。手入力した分だけ。
+     ============================================================ */
+  function getSales(){try{return JSON.parse(localStorage.getItem("cotonoha_sales")||"[]");}catch(e){return [];}}
+  function setSales(l){try{localStorage.setItem("cotonoha_sales",JSON.stringify(l||[]));}catch(e){}}
+
+  function saveSale(){
+    var date=$("slDate").value||todayStr();
+    var amount=parseFloat($("slAmount").value);
+    if(isNaN(amount)||amount<=0){ alert("金額を入れてね"); return; }
+    var rec={ id:"sale|"+Date.now(), date:date, amount:Math.round(amount), memo:($("slMemo").value||"").trim() };
+    var list=getSales(); list.unshift(rec); setSales(list);
+    Cloud.pushTree("sales",rec);
+    refreshManage();
+    $("slAmount").value="";$("slMemo").value="";
+    alert("保存した"+(Cloud.isOn()?"（端末＋クラウド）":"（この端末内）")+"。");
+  }
+
+  /* 月セレクタ（経費＋売上のある月＋今月）*/
+  function buildMgMonths(){
+    var sel=$("mgMonthSel"), seen={}, months=[];
+    var tm=ym(todayStr()); seen[tm]=1; months.push(tm);
+    var ex=getList(); for(var i=0;i<ex.length;i++){ var m=ym(ex[i].date); if(m&&!seen[m]){seen[m]=1;months.push(m);} }
+    var sl=getSales(); for(var j=0;j<sl.length;j++){ var n=ym(sl[j].date); if(n&&!seen[n]){seen[n]=1;months.push(n);} }
+    months.sort(function(a,b){return a<b?1:(a>b?-1:0);});
+    var cur=sel.value, html="";
+    for(var k=0;k<months.length;k++){ var mm=months[k]; html+='<option value="'+mm+'">'+mm.replace("-","年")+"月"+'</option>'; }
+    sel.innerHTML=html;
+    if(cur && months.indexOf(cur)>=0){ sel.value=cur; } else { sel.value=months[0]; }
+  }
+
+  function sumExpenseMonth(m){ var l=getList(),t=0; for(var i=0;i<l.length;i++){ if(ym(l[i].date)===m)t+=(Number(l[i].amount)||0); } return t; }
+  function sumSalesMonth(m){ var l=getSales(),t=0; for(var i=0;i<l.length;i++){ if(ym(l[i].date)===m)t+=(Number(l[i].amount)||0); } return t; }
+  function invTotalNow(){ var l=getInv(),t=0; for(var i=0;i<l.length;i++){ t+=(Number(l[i].grams)||0)/1000*(Number(l[i].pricePerKg)||0); } return Math.round(t); }
+
+  function renderMgSummary(){
+    var m=$("mgMonthSel").value||ym(todayStr());
+    var sales=sumSalesMonth(m), expense=sumExpenseMonth(m), profit=sales-expense;
+    $("mgSales").textContent=yen(sales);
+    $("mgExpense").textContent=yen(expense);
+    var pe=$("mgProfit"); pe.textContent=(profit<0?"−":"")+yen(Math.abs(profit));
+    pe.style.color=(profit<0)?"var(--warn)":"var(--ink)";
+    $("mgProfitLabel").textContent="粗利（売上−経費）";
+    $("mgInv").textContent=yen(invTotalNow());
+  }
+
+  function renderSlList(){
+    var list=getSales(), box=$("slList");
+    if(!list.length){ box.innerHTML='<div class="empty">まだ無し</div>'; return; }
+    var html="";
+    for(var i=0;i<Math.min(100,list.length);i++){ var x=list[i];
+      var rid=String(x.id||"").replace(/"/g,"&quot;");
+      var memo=x.memo?String(x.memo):"(メモなし)";
+      html+='<div class="item">'+
+        '<div class="mid"><div class="pay">'+memo.replace(/</g,"&lt;")+'</div><div class="dt">'+String(x.date||"")+'</div></div>'+
+        '<span class="amt">'+yen(x.amount)+'</span>'+
+        '<button type="button" class="del" data-id="'+rid+'">削除</button></div>';
+    }
+    box.innerHTML=html;
+    var dels=box.querySelectorAll(".del");
+    for(var k=0;k<dels.length;k++){(function(b){ b.addEventListener("click",function(){ deleteSale(b.getAttribute("data-id")); }); })(dels[k]);}
+  }
+  function deleteSale(id){
+    if(!confirm("この売上を削除する？（元に戻せません）"))return;
+    var list=getSales(), out=[];
+    for(var i=0;i<list.length;i++){ if(String(list[i].id)!==String(id))out.push(list[i]); }
+    setSales(out); Cloud.deleteTree("sales",id); refreshManage();
+  }
+  function refreshManage(){ buildMgMonths(); renderMgSummary(); renderSlList(); }
+
   /* ---- タブ切替 ---- */
   function showMode(name){
     var ms=[{k:"expense",id:"Expense"},{k:"inventory",id:"Inventory"},{k:"manage",id:"Manage"}];
@@ -483,7 +586,7 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     function pull(){
       if(!ready||!uid||syncing)return; syncing=true;
       var done=0;
-      function fin(){ done++; if(done>=2){ setState("同期済み（経費"+getList().length+"・在庫"+getInv().length+"件）"); syncing=false; } }
+      function fin(){ done++; if(done>=3){ setState("同期済み（経費"+getList().length+"・在庫"+getInv().length+"・売上"+getSales().length+"件）"); syncing=false; } }
       /* expenses */
       try{
         db.ref("users/"+uid+"/expenses").once("value").then(function(snap){
@@ -502,7 +605,17 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
           setInv(merged); refreshInv(); pushAllInv(merged); fin();
         }).catch(function(){ fin(); });
       }catch(e){ fin(); }
+      /* sales（idで一意・mergeInvと同作法）*/
+      try{
+        db.ref("users/"+uid+"/sales").once("value").then(function(snap){
+          var cloud=[], val=snap.val();
+          if(val){ for(var k in val){ if(val.hasOwnProperty(k))cloud.push(val[k]); } }
+          var merged=mergeInv(getSales(), cloud);
+          setSales(merged); refreshManage(); pushAllSales(merged); fin();
+        }).catch(function(){ fin(); });
+      }catch(e){ fin(); }
     }
+    function pushAllSales(list){ if(!ready||!uid)return; try{ var obj={}; for(var i=0;i<list.length;i++){ obj[safeKey(list[i].id)]=list[i]; } db.ref("users/"+uid+"/sales").set(obj).catch(function(){}); }catch(e){} }
     function pushAll(list){ if(!ready||!uid)return; try{ var obj={}; for(var i=0;i<list.length;i++){ obj[safeKey(recId(list[i]))]=list[i]; } db.ref("users/"+uid+"/expenses").set(obj).catch(function(){}); }catch(e){} }
     function pushAllInv(list){ if(!ready||!uid)return; try{ var obj={}; for(var i=0;i<list.length;i++){ obj[safeKey(list[i].id)]=list[i]; } db.ref("users/"+uid+"/inventory").set(obj).catch(function(){}); }catch(e){} }
     function pushOne(rec){ if(!ready||!uid||!rec)return; try{ db.ref("users/"+uid+"/expenses/"+safeKey(recId(rec))).set(rec).catch(function(){}); }catch(e){} }
@@ -522,6 +635,10 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
   /* 在庫 */
   buildInvType();
   $("invSaveBtn").addEventListener("click",saveInventory);
+  /* 売上（経営） */
+  $("slDate").value=todayStr();
+  $("slSaveBtn").addEventListener("click",saveSale);
+  $("mgMonthSel").addEventListener("change",renderMgSummary);
   /* タブ切替 */
   var mb=document.querySelectorAll(".modebtn");
   for(var mi=0;mi<mb.length;mi++){(function(b){ b.addEventListener("click",function(){ showMode(b.getAttribute("data-mode")); }); })(mb[mi]);}
@@ -529,6 +646,7 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
   var _lout=$("logoutBtn"); if(_lout)_lout.addEventListener("click",function(){Cloud.logout();});
   refreshAll();
   refreshInv();
+  refreshManage();
   Cloud.init();
 })();
 </script>
