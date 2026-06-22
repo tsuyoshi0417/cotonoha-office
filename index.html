@@ -128,8 +128,8 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
   function nn(v){return (v===undefined||v===null)?"":v;}
   function yen(n){ n=Math.round(Number(n)||0); return "¥"+String(n).replace(/\B(?=(\d{3})+(?!\d))/g,","); }
 
-  /* 費目（珈琲事業）。ここを足し引きすれば費目を調整できる1か所。 */
-  var CATS=["仕入(生豆)","資材","機材","燃料","送料","出店・イベント","学習","通信・サブスク","雑費"];
+  /* 費目＝確定申告の勘定科目（つよしさんのビジネス記録シートに合わせた）。ここを足し引きすれば調整できる1か所。 */
+  var CATS=["仕入(生豆)","消耗品費","荷造運賃","広告宣伝費","接待交際費","研究費","旅費交通費","通信費","水道光熱費","支払手数料","雑費"];
   var selCat="";
 
   /* ---- localStorage ---- */
