@@ -17,6 +17,11 @@
     padding:14px;max-width:760px;margin:0 auto}
   h1{font-size:18px;font-weight:700;margin:2px 0 2px;letter-spacing:.04em}
   .tag{color:var(--sub);font-size:12px;margin-bottom:12px}
+  .modebar{display:flex;gap:8px;margin:8px 0 12px}
+  .modebtn{flex:1;padding:14px 6px;font-size:16px;font-weight:700;border-radius:12px;
+    background:var(--panel2);color:var(--sub);border:1px solid var(--line);cursor:pointer;font-family:inherit;min-height:54px}
+  .modebtn.cur{background:var(--accent);color:#fff;border-color:transparent}
+  .mode{display:none}.mode.active{display:block}
   .panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
   label{display:block;font-size:12px;color:var(--sub);margin:0 0 4px}
   input,textarea,select{width:100%;background:var(--panel2);border:1px solid var(--line);
@@ -47,6 +52,21 @@
   .list .amt{flex:0 0 auto;font-variant-numeric:tabular-nums;font-weight:700;color:var(--ink)}
   .list .del{flex:0 0 auto;width:auto;padding:6px 10px;font-size:12px;background:transparent;color:var(--warn);border:1px solid var(--line)}
   .empty{color:var(--sub);font-size:13px}
+  /* 在庫一覧 */
+  .invitem{padding:10px 0;border-bottom:1px solid var(--line)}
+  .invitem:last-child{border-bottom:0}
+  .invitem .top{display:flex;align-items:center;gap:8px}
+  .invitem .top .nm{flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .invitem .tg{flex:0 0 auto;font-size:11px;font-weight:700;color:var(--accent);background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:3px 9px}
+  .invitem .del{flex:0 0 auto;width:auto;padding:6px 10px;font-size:12px;background:transparent;color:var(--warn);border:1px solid var(--line);border-radius:10px;font-weight:700}
+  .invitem .bot{display:flex;align-items:center;gap:8px;margin-top:7px;flex-wrap:wrap}
+  .invitem .gwrap{display:flex;align-items:center;gap:6px}
+  .invitem .gwrap input{width:90px;padding:7px;font-size:15px;text-align:right}
+  .invitem .gwrap .u{font-size:12px;color:var(--sub)}
+  .invitem .upd{flex:0 0 auto;width:auto;padding:7px 12px;font-size:12px;font-weight:700}
+  .invitem .val{margin-left:auto;font-size:12px;color:var(--sub)}
+  .invitem .val b{color:var(--accent2);font-variant-numeric:tabular-nums}
+  .invitem .meta{font-size:11px;color:var(--sub);margin-top:4px}
   /* 集計 */
   .bd{display:flex;justify-content:space-between;font-size:14px;padding:7px 2px;border-bottom:1px solid var(--line)}
   .bd:last-child{border-bottom:0}
@@ -66,8 +86,17 @@
 </head>
 <body>
   <div class="err" id="err"></div>
-  <h1>言ノ葉 経費 <span style="color:var(--sub);font-size:12px">v0</span></h1>
-  <div class="tag">領収書・経費の台帳｜お金のデータ＝本人だけ（ログインで本人のクラウドに同期）</div>
+  <h1>言ノ葉 バックオフィス <span style="color:var(--sub);font-size:12px">v0</span></h1>
+  <div class="tag">事業バックオフィス｜お金のデータ＝本人だけ（ログインで本人のクラウドに同期）</div>
+
+  <div class="modebar" id="modebar">
+    <button type="button" class="modebtn cur" data-mode="expense">経費</button>
+    <button type="button" class="modebtn" data-mode="inventory">在庫</button>
+    <button type="button" class="modebtn" data-mode="manage">経営</button>
+  </div>
+
+  <!-- ============ 経費タブ（既存・無改修） ============ -->
+  <div class="mode active" id="modeExpense">
 
   <!-- 今月サマリー -->
   <div class="summary">
@@ -110,6 +139,56 @@
     <div class="list" id="list"><div class="empty">まだ無し</div></div>
   </div>
 
+  </div><!-- /modeExpense -->
+
+  <!-- ============ 在庫タブ ============ -->
+  <div class="mode" id="modeInventory">
+    <!-- 在庫評価額サマリー -->
+    <div class="summary">
+      <div><div class="lbl">在庫評価額（原価）<span id="invCount" style="color:var(--sub);font-size:12px"></span></div></div>
+      <div class="amt" id="invTotal">¥0</div>
+    </div>
+
+    <!-- 入力 -->
+    <div class="panel">
+      <div class="row">
+        <div><label>豆名</label><input id="invBean" placeholder="例：エチオピア イルガチェフェ"></div>
+      </div>
+      <label style="margin-top:10px">種別（選ぶ）</label>
+      <div class="chips" id="invTypeChips">
+        <span class="chip invtype sel" data-v="生豆">生豆</span>
+        <span class="chip invtype" data-v="焙煎豆">焙煎豆</span>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div><label>残量（g）</label><input id="invGrams" type="number" inputmode="numeric" placeholder="例 1000"></div>
+        <div><label>原価（円/kg）</label><input id="invPrice" type="number" inputmode="numeric" placeholder="例 3600"></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div><label>仕入先</label><input id="invSupplier" placeholder="例：松屋珈琲"></div>
+      </div>
+      <label style="margin-top:10px">メモ（任意）</label>
+      <input id="invMemo" placeholder="任意">
+      <div class="acts">
+        <button type="button" class="save" id="invSaveBtn">この在庫を保存</button>
+      </div>
+      <div class="note">残量は<b>手で更新</b>する（焙煎・販売の自動増減はしない＝低摩擦・破綻しない）。</div>
+    </div>
+
+    <!-- 一覧 -->
+    <div class="panel">
+      <label style="margin:0 0 8px">在庫一覧（残量を直接書き換えられる）</label>
+      <div class="list" id="invList"><div class="empty">まだ無し</div></div>
+    </div>
+  </div><!-- /modeInventory -->
+
+  <!-- ============ 経営タブ（プレースホルダ） ============ -->
+  <div class="mode" id="modeManage">
+    <div class="panel">
+      <label style="margin:0 0 6px">経営</label>
+      <div class="empty">次に作る（粗利・原価・資金繰りなどをここに）。</div>
+    </div>
+  </div><!-- /modeManage -->
+
   <!-- クラウド同期 -->
   <div class="panel" id="syncPanel" style="display:none">
     <div class="acts">
@@ -117,7 +196,7 @@
       <button type="button" id="logoutBtn" style="display:none;flex:.6">ログアウト</button>
     </div>
     <div class="sync" id="syncState" style="display:block">クラウド同期：未ログイン</div>
-    <div class="note">お金のデータは本人のGoogleアカウント配下（users/{uid}/expenses）に入り、本人だけが読める。</div>
+    <div class="note">データは本人のGoogleアカウント配下（users/{uid}/expenses・/inventory）に入り、本人だけが読める。</div>
   </div>
 
 <script>
@@ -247,10 +326,103 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
   function refreshAll(){ buildMonths(); renderBreakdown(); renderSummary(); renderList(); }
 
   /* ============================================================
+     在庫（cotonoha_inventory ＋ RTDB users/{uid}/inventory）。v0最小。
+     レコード={id,bean,type,grams,pricePerKg,supplier,memo}。手動更新。
+     ============================================================ */
+  var invSelType="生豆";
+  function getInv(){try{return JSON.parse(localStorage.getItem("cotonoha_inventory")||"[]");}catch(e){return [];}}
+  function setInv(l){try{localStorage.setItem("cotonoha_inventory",JSON.stringify(l||[]));}catch(e){}}
+
+  function buildInvType(){
+    var box=$("invTypeChips"), chips=box.querySelectorAll(".invtype");
+    for(var j=0;j<chips.length;j++){(function(c){
+      c.addEventListener("click",function(){
+        invSelType=c.getAttribute("data-v");
+        var all=box.querySelectorAll(".invtype");
+        for(var k=0;k<all.length;k++){ if(all[k].getAttribute("data-v")===invSelType)all[k].classList.add("sel");else all[k].classList.remove("sel"); }
+      });
+    })(chips[j]);}
+  }
+
+  function saveInventory(){
+    var bean=($("invBean").value||"").trim();
+    if(!bean){ alert("豆名を入れてね"); return; }
+    var grams=parseFloat($("invGrams").value); if(isNaN(grams)||grams<0)grams=0;
+    var price=parseFloat($("invPrice").value); if(isNaN(price)||price<0)price=0;
+    var rec={ id:"inv|"+Date.now(), bean:bean, type:invSelType||"生豆",
+              grams:Math.round(grams), pricePerKg:Math.round(price),
+              supplier:($("invSupplier").value||"").trim(), memo:($("invMemo").value||"").trim() };
+    var list=getInv(); list.unshift(rec); setInv(list);
+    Cloud.pushTree("inventory",rec);
+    refreshInv();
+    $("invBean").value="";$("invGrams").value="";$("invPrice").value="";$("invSupplier").value="";$("invMemo").value="";
+    alert("保存した"+(Cloud.isOn()?"（端末＋クラウド）":"（この端末内）")+"。");
+  }
+
+  function renderInv(){
+    var list=getInv(), box=$("invList");
+    if(!list.length){ box.innerHTML='<div class="empty">まだ無し</div>'; return; }
+    var html="";
+    for(var i=0;i<list.length;i++){ var x=list[i];
+      var rid=String(x.id||"").replace(/"/g,"&quot;");
+      var g=Number(x.grams)||0, p=Number(x.pricePerKg)||0, val=Math.round(g/1000*p);
+      var meta=[];
+      if(x.supplier)meta.push(String(x.supplier));
+      if(p)meta.push("原価"+yen(p)+"/kg");
+      if(x.memo)meta.push(String(x.memo));
+      html+='<div class="invitem">'+
+        '<div class="top"><span class="tg">'+String(x.type||"").replace(/</g,"&lt;")+'</span>'+
+          '<span class="nm">'+String(x.bean||"").replace(/</g,"&lt;")+'</span>'+
+          '<button type="button" class="del" data-id="'+rid+'">削除</button></div>'+
+        '<div class="bot">'+
+          '<span class="gwrap"><input type="number" inputmode="numeric" class="ginp" data-id="'+rid+'" value="'+g+'"><span class="u">g</span></span>'+
+          '<button type="button" class="upd" data-id="'+rid+'">更新</button>'+
+          '<span class="val">評価額 <b>'+yen(val)+'</b></span>'+
+        '</div>'+
+        (meta.length?('<div class="meta">'+meta.join(" ・ ").replace(/</g,"&lt;")+'</div>'):'')+
+      '</div>';
+    }
+    box.innerHTML=html;
+    var dels=box.querySelectorAll(".del");
+    for(var k=0;k<dels.length;k++){(function(b){ b.addEventListener("click",function(){ deleteInventory(b.getAttribute("data-id")); }); })(dels[k]);}
+    var ups=box.querySelectorAll(".upd");
+    for(var u=0;u<ups.length;u++){(function(b){ b.addEventListener("click",function(){ updateGrams(b.getAttribute("data-id")); }); })(ups[u]);}
+  }
+  function updateGrams(id){
+    var inp=$("invList").querySelector('.ginp[data-id="'+id.replace(/"/g,'\\"')+'"]');
+    if(!inp)return;
+    var g=parseFloat(inp.value); if(isNaN(g)||g<0)g=0; g=Math.round(g);
+    var list=getInv(), hit=null;
+    for(var i=0;i<list.length;i++){ if(String(list[i].id)===String(id)){ list[i].grams=g; hit=list[i]; } }
+    setInv(list); if(hit)Cloud.pushTree("inventory",hit); refreshInv();
+  }
+  function deleteInventory(id){
+    if(!confirm("この在庫を削除する？（元に戻せません）"))return;
+    var list=getInv(), out=[];
+    for(var i=0;i<list.length;i++){ if(String(list[i].id)!==String(id))out.push(list[i]); }
+    setInv(out); Cloud.deleteTree("inventory",id); refreshInv();
+  }
+  function renderInvSummary(){
+    var list=getInv(), total=0;
+    for(var i=0;i<list.length;i++){ total+=(Number(list[i].grams)||0)/1000*(Number(list[i].pricePerKg)||0); }
+    $("invTotal").textContent=yen(Math.round(total));
+    $("invCount").textContent=list.length?(" ・"+list.length+"本"):"";
+  }
+  function refreshInv(){ renderInvSummary(); renderInv(); }
+
+  /* ---- タブ切替 ---- */
+  function showMode(name){
+    var ms=[{k:"expense",id:"Expense"},{k:"inventory",id:"Inventory"},{k:"manage",id:"Manage"}];
+    for(var i=0;i<ms.length;i++){ var box=$("mode"+ms[i].id); if(box){ if(ms[i].k===name)box.classList.add("active");else box.classList.remove("active"); } }
+    var btns=document.querySelectorAll(".modebtn");
+    for(var j=0;j<btns.length;j++){ if(btns[j].getAttribute("data-mode")===name)btns[j].classList.add("cur");else btns[j].classList.remove("cur"); }
+  }
+
+  /* ============================================================
      クラウド同期（Firebase RTDB＋Googleログイン）。焙煎アプリと同作法。
      - 失敗してもアプリ本体は完全に動く（全部try/catchで隔離）
      - 未ログイン＝localStorageだけ
-     - ログイン中＝/users/{uid}/expenses にミラー、起動時にunion統合
+     - ログイン中＝/users/{uid}/expenses ＋ /inventory にミラー、起動時にunion統合
      ============================================================ */
   var Cloud=(function(){
     var FB={
@@ -299,22 +471,46 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
       }catch(e){ alert("ログインに失敗："+(e&&e.message?e.message:e)); }
     }
     function logout(){ try{ if(auth)auth.signOut(); }catch(e){} }
+    /* 在庫のunion統合（idで一意・id降順＝新しい順）*/
+    function mergeInv(a,b){
+      var map={},order=[],lists=[a||[],b||[]],L,j,x,id;
+      for(L=0;L<lists.length;L++){ for(j=0;j<lists[L].length;j++){ x=lists[L][j]; id=String(x&&x.id||"");
+        if(!id)continue; if(!map[id]){ map[id]=x; order.push(id); } else { map[id]=x; } } }
+      var out=[]; for(var i=0;i<order.length;i++)out.push(map[order[i]]);
+      out.sort(function(p,q){ return String(q.id||"")<String(p.id||"")?-1:(String(q.id||"")>String(p.id||"")?1:0); });
+      return out;
+    }
     function pull(){
       if(!ready||!uid||syncing)return; syncing=true;
+      var done=0;
+      function fin(){ done++; if(done>=2){ setState("同期済み（経費"+getList().length+"・在庫"+getInv().length+"件）"); syncing=false; } }
+      /* expenses */
       try{
         db.ref("users/"+uid+"/expenses").once("value").then(function(snap){
           var cloud=[], val=snap.val();
           if(val){ for(var k in val){ if(val.hasOwnProperty(k))cloud.push(val[k]); } }
           var merged=mergeLists(getList(), cloud);
-          setList(merged); refreshAll(); pushAll(merged);
-          setState("同期済み（"+merged.length+"件）"); syncing=false;
-        }).catch(function(){ setState("読込エラー（ローカルで動作）"); syncing=false; });
-      }catch(e){ setState("読込エラー（ローカルで動作）"); syncing=false; }
+          setList(merged); refreshAll(); pushAll(merged); fin();
+        }).catch(function(){ setState("読込エラー（ローカルで動作）"); fin(); });
+      }catch(e){ setState("読込エラー（ローカルで動作）"); fin(); }
+      /* inventory */
+      try{
+        db.ref("users/"+uid+"/inventory").once("value").then(function(snap){
+          var cloud=[], val=snap.val();
+          if(val){ for(var k in val){ if(val.hasOwnProperty(k))cloud.push(val[k]); } }
+          var merged=mergeInv(getInv(), cloud);
+          setInv(merged); refreshInv(); pushAllInv(merged); fin();
+        }).catch(function(){ fin(); });
+      }catch(e){ fin(); }
     }
     function pushAll(list){ if(!ready||!uid)return; try{ var obj={}; for(var i=0;i<list.length;i++){ obj[safeKey(recId(list[i]))]=list[i]; } db.ref("users/"+uid+"/expenses").set(obj).catch(function(){}); }catch(e){} }
+    function pushAllInv(list){ if(!ready||!uid)return; try{ var obj={}; for(var i=0;i<list.length;i++){ obj[safeKey(list[i].id)]=list[i]; } db.ref("users/"+uid+"/inventory").set(obj).catch(function(){}); }catch(e){} }
     function pushOne(rec){ if(!ready||!uid||!rec)return; try{ db.ref("users/"+uid+"/expenses/"+safeKey(recId(rec))).set(rec).catch(function(){}); }catch(e){} }
     function deleteOne(id){ if(!ready||!uid||!id)return; try{ db.ref("users/"+uid+"/expenses/"+safeKey(id)).remove().catch(function(){}); }catch(e){} }
-    return { init:init, login:login, logout:logout, pushOne:pushOne, deleteOne:deleteOne, isOn:function(){return !!(ready&&uid);} };
+    /* tree指定版（在庫用。recキー＝id）*/
+    function pushTree(tree,rec){ if(!ready||!uid||!rec)return; try{ db.ref("users/"+uid+"/"+tree+"/"+safeKey(rec.id)).set(rec).catch(function(){}); }catch(e){} }
+    function deleteTree(tree,id){ if(!ready||!uid||!id)return; try{ db.ref("users/"+uid+"/"+tree+"/"+safeKey(id)).remove().catch(function(){}); }catch(e){} }
+    return { init:init, login:login, logout:logout, pushOne:pushOne, deleteOne:deleteOne, pushTree:pushTree, deleteTree:deleteTree, isOn:function(){return !!(ready&&uid);} };
   })();
 
   /* ---- 初期化 ---- */
@@ -323,9 +519,16 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
   $("saveBtn").addEventListener("click",saveExpense);
   $("csvBtn").addEventListener("click",exportCSV);
   $("monthSel").addEventListener("change",renderBreakdown);
+  /* 在庫 */
+  buildInvType();
+  $("invSaveBtn").addEventListener("click",saveInventory);
+  /* タブ切替 */
+  var mb=document.querySelectorAll(".modebtn");
+  for(var mi=0;mi<mb.length;mi++){(function(b){ b.addEventListener("click",function(){ showMode(b.getAttribute("data-mode")); }); })(mb[mi]);}
   var _lin=$("loginBtn"); if(_lin)_lin.addEventListener("click",function(){Cloud.login();});
   var _lout=$("logoutBtn"); if(_lout)_lout.addEventListener("click",function(){Cloud.logout();});
   refreshAll();
+  refreshInv();
   Cloud.init();
 })();
 </script>
