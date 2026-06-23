@@ -80,6 +80,18 @@
   .sync{display:none;font-size:12px;color:var(--sub);margin-top:6px}
   .err{display:none;background:#f7e3da;border:1px solid var(--warn);color:#8a3d23;
     padding:10px;border-radius:10px;font-size:12px;margin-bottom:12px;white-space:pre-wrap}
+  /* 経理アドバイス */
+  .adv{border-left:4px solid var(--sub);background:var(--panel2);border-radius:8px;
+    padding:9px 11px;margin-bottom:8px;font-size:13px;line-height:1.7}
+  .adv:last-child{margin-bottom:0}
+  .adv.ok{border-left-color:var(--ok)}
+  .adv.warn{border-left-color:var(--warn)}
+  .adv .albl{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.04em;
+    padding:1px 7px;border-radius:999px;margin-bottom:5px;color:#fff;background:var(--sub)}
+  .adv.ok .albl{background:var(--ok)}
+  .adv.warn .albl{background:var(--warn)}
+  .adv .atx{color:var(--ink)}
+  .adv b{color:var(--ink);font-variant-numeric:tabular-nums}
 </style>
 <!-- Firebase compat CDN（焙煎アプリと同じ・安定版固定）。読込失敗してもアプリ本体は動く（JSはtry/catchで隔離）-->
 <script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
@@ -89,7 +101,7 @@
 <body>
   <div class="err" id="err"></div>
   <a href="https://tsuyoshi0417.github.io/" style="display:inline-block;font-size:13px;color:var(--accent);text-decoration:none;margin-bottom:6px">← ホーム</a>
-  <h1>言ノ葉 バックオフィス <span style="color:var(--sub);font-size:12px">v0</span></h1>
+  <h1>言ノ葉 バックオフィス <span style="color:var(--sub);font-size:12px">v1</span></h1>
   <div class="tag">事業バックオフィス｜お金のデータ＝本人だけ（ログインで本人のクラウドに同期）</div>
 
   <div class="modebar" id="modebar">
@@ -186,6 +198,13 @@
 
   <!-- ============ 経営タブ ============ -->
   <div class="mode" id="modeManage">
+
+    <!-- 経理アドバイス（読むだけ・外部送信なし・既存集計から計算） -->
+    <div class="panel" id="advisePanel">
+      <label style="margin:0 0 8px">経理アドバイス</label>
+      <div id="adviseBox"></div>
+      <div class="note" style="margin-top:8px">※ 確定診断ではなく気づき。最終判断はご自身（必要なら税理士）で。</div>
+    </div>
 
     <!-- 月セレクタ -->
     <div class="panel">
@@ -481,6 +500,151 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
   function sumSalesMonth(m){ var l=getSales(),t=0; for(var i=0;i<l.length;i++){ if(ym(l[i].date)===m)t+=(Number(l[i].amount)||0); } return t; }
   function invTotalNow(){ var l=getInv(),t=0; for(var i=0;i<l.length;i++){ t+=(Number(l[i].grams)||0)/1000*(Number(l[i].pricePerKg)||0); } return Math.round(t); }
 
+  /* ============================================================
+     経理アドバイスv0（外部送信なし＝既存のlocalStorageから読んで計算するだけ・LLM不使用）。
+     経理(cotonoha-money)設計のルールを実装。閾値は下のADV_TH 1か所で調整できる。
+     ============================================================ */
+  /* 閾値（後で調整できる1か所）*/
+  var ADV_TH={ kousai:0.15, kousaiMin:5000, shiire:0.30, invMul:1.5, jump:2, jumpMin:10000, fee:0.10 };
+
+  /* 月×費目の集計（{category:合計}）*/
+  function exByCat(m){ var l=getList(),by={}; for(var i=0;i<l.length;i++){ var x=l[i]; if(ym(x.date)!==m)continue; var c=x.category||"雑費"; by[c]=(by[c]||0)+(Number(x.amount)||0); } return by; }
+  /* 月の経費合計（=sumExpenseMonth別名・読みやすさ用）*/
+  function exTotal(m){ return sumExpenseMonth(m); }
+  /* 全期間売上合計 */
+  function salesTotalAll(){ var l=getSales(),t=0; for(var i=0;i<l.length;i++){ t+=(Number(l[i].amount)||0); } return t; }
+  /* 今月を除く直近の「経費データのある月」最大3ヶ月の平均（2ヶ月未満ならnull）*/
+  function avgEx3(curM){
+    var l=getList(), seen={}, months=[];
+    for(var i=0;i<l.length;i++){ var m=ym(l[i].date); if(m && m!==curM && !seen[m]){ seen[m]=1; months.push(m); } }
+    months.sort(function(a,b){return a<b?1:(a>b?-1:0);}); // 新しい順
+    var use=months.slice(0,3);
+    if(use.length<2) return null;
+    var sum=0; for(var j=0;j<use.length;j++){ sum+=sumExpenseMonth(use[j]); }
+    return sum/use.length;
+  }
+  /* 直近Nヶ月（curM含め過去側）に毎月計上がある費目か */
+  function catEveryMonth(cat,curM,n){
+    var d=new Date(curM+"-01T00:00:00");
+    for(var i=0;i<n;i++){
+      var mm=d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2);
+      var by=exByCat(mm);
+      if(!(by[cat]>0)) return false;
+      d.setMonth(d.getMonth()-1);
+    }
+    return true;
+  }
+  /* 前月のYYYY-MM */
+  function prevYm(curM){ var d=new Date(curM+"-01T00:00:00"); d.setMonth(d.getMonth()-1); return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2); }
+  function pct(part,whole){ if(!whole) return 0; return Math.round(part/whole*100); }
+
+  function advise(){
+    var box=$("adviseBox"); if(!box) return;
+    var curM=ym(todayStr()), prevM=prevYm(curM);
+    var expenses=getList(), sales=getSales();
+    var exCur=sumExpenseMonth(curM), slCur=sumSalesMonth(curM), slPrev=sumSalesMonth(prevM);
+    var byCur=exByCat(curM), byPrev=exByCat(prevM);
+    var invNow=invTotalNow();
+    var avg=avgEx3(curM);
+    var cards=[]; // {prio, tone, label, text}
+
+    /* R0 最初の一言（中立・優先度最低）*/
+    if( (expenses.length+sales.length===0) || (expenses.length<3 && salesTotalAll()===0) ){
+      cards.push({prio:1,tone:"sub",label:"気づき",
+        text:"まだ判断材料が少ないです。経費を数件入れると、費目の偏りや投資ペースを正直にお伝えします。今は気負わず、レシート単位で記録から。"});
+    }
+
+    /* R1 投資期の明示（中立・高）*/
+    if( slCur===0 && exCur>0 ){
+      cards.push({prio:80,tone:"sub",label:"気づき",
+        text:"今月は売上0・経費<b>"+yen(exCur)+"</b>。これは赤字ではなく仕込み(投資)期の支出です。粗利で測る段階ではありません。記録すべきは『何にいくら投資したか』。"});
+    }
+
+    /* R2 接待交際費の偏り（注意・高）*/
+    var kousai=byCur["接待交際費"]||0;
+    if( exCur>0 && kousai>=ADV_TH.kousaiMin && kousai/exCur>ADV_TH.kousai ){
+      cards.push({prio:78,tone:"warn",label:"注意",
+        text:"今月の接待交際費が経費の<b>"+pct(kousai,exCur)+"%</b>。税務署が必ず見る費目です。誰と・何の目的かを各レコードのメモに残すと、後の按分・否認の心配が消えます。"});
+    }
+
+    /* R3 仕入は当月経費でなく在庫資産（中立・中）*/
+    var shiire=byCur["仕入(生豆)"]||0;
+    if( shiire>0 && invNow>0 && exCur>0 && shiire/exCur>ADV_TH.shiire ){
+      cards.push({prio:55,tone:"sub",label:"気づき",
+        text:"今月の仕入(生豆)<b>"+yen(shiire)+"</b>。仕入れた豆は売れるまで『経費』でなく棚卸資産(在庫)です。在庫タブに残量を残せば申告時に棚卸が出せます。"});
+    }
+
+    /* R4 在庫の積み上がり（注意・中）*/
+    if( avg!==null && invNow>avg*ADV_TH.invMul ){
+      var ratio=Math.round(invNow/avg*10)/10;
+      cards.push({prio:54,tone:"warn",label:"注意",
+        text:"在庫評価額<b>"+yen(invNow)+"</b>＝直近の月平均経費の<b>"+ratio+"倍</b>。豆は鮮度が命。寝かせた在庫は現金と鮮度を食います。仕入と焙煎・販売ペースの見直しを。"});
+    }
+
+    /* R5 前月比で費目急増（中立・中／最大の1費目だけ）*/
+    var jumpBest=null;
+    for(var c in byCur){ if(!byCur.hasOwnProperty(c))continue;
+      var cur=byCur[c]||0, prev=byPrev[c]||0;
+      if( cur>0 && prev>0 && cur/prev>=ADV_TH.jump && cur>=ADV_TH.jumpMin ){
+        if(!jumpBest || cur>jumpBest.cur){ jumpBest={cat:c,cur:cur,prev:prev}; }
+      }
+    }
+    if(jumpBest){
+      var x=Math.round(jumpBest.cur/jumpBest.prev*10)/10;
+      cards.push({prio:52,tone:"sub",label:"気づき",
+        text:jumpBest.cat.replace(/</g,"&lt;")+"が前月<b>"+yen(jumpBest.prev)+"</b>→今月<b>"+yen(jumpBest.cur)+"</b>（<b>"+x+"倍</b>）。意図した投資なら問題なし。意図せずなら何が増えたかメモを。"});
+    }
+
+    /* R6 売上が立った節目（良い・高）*/
+    if( slPrev===0 && slCur>0 ){
+      cards.push({prio:82,tone:"ok",label:"良い兆し",
+        text:"今月、売上が立ちました（<b>"+yen(slCur)+"</b>）。仕込み期から販売期への節目です。ここからは粗利＝売上−対応原価で見る段階。1袋あたり原価が分かると値付けが正直にできます。"});
+    }
+
+    /* R7 支払手数料が売上を削る（注意・中）*/
+    var fee=byCur["支払手数料"]||0;
+    if( fee>0 && slCur>0 && fee/slCur>ADV_TH.fee ){
+      cards.push({prio:50,tone:"warn",label:"注意",
+        text:"今月、支払手数料が売上の<b>"+pct(fee,slCur)+"%</b>。売上−手数料＝実際に入る額で値付けを考えると手取りが薄くなる罠を避けられます。"});
+    }
+
+    /* R8 証憑メモ未記入の促し（注意・中）*/
+    var curCnt=0, blank=0;
+    for(var i=0;i<expenses.length;i++){ if(ym(expenses[i].date)!==curM)continue; curCnt++;
+      var p=(expenses[i].payee||"").trim(), mo=(expenses[i].memo||"").trim();
+      if(!p && !mo) blank++;
+    }
+    if( blank>=3 || (curCnt>0 && blank/curCnt>=0.3 && blank>0) ){
+      cards.push({prio:48,tone:"warn",label:"注意",
+        text:"今月、支払先もメモも空の経費が<b>"+blank+"件</b>。申告のとき『これ何だっけ』が一番つらい。支払先か用途を一言だけでも。1件10秒。"});
+    }
+
+    /* R9 固定費の把握（中立・中）*/
+    var fixedCats=["地代家賃","通信費","水道光熱費","利子割引料"], hitFixed=[], fixedTotal=0;
+    for(var f=0;f<fixedCats.length;f++){
+      if( catEveryMonth(fixedCats[f],curM,3) ){ hitFixed.push(fixedCats[f]); fixedTotal+=(byCur[fixedCats[f]]||0); }
+    }
+    if(hitFixed.length){
+      cards.push({prio:46,tone:"sub",label:"気づき",
+        text:hitFixed.join("・").replace(/</g,"&lt;")+"が毎月出ています。売上ゼロでも消える固定費。月合計<b>"+yen(fixedTotal)+"</b>を頭に入れると損益分岐(最低いくら売れば回るか)が見えます。"});
+    }
+
+    /* R0は他が出たら隠す（優先度最低の特別扱い）*/
+    var others=[]; for(var a=0;a<cards.length;a++){ if(cards[a].prio>1) others.push(cards[a]); }
+    var pool = others.length ? others : cards;
+    pool.sort(function(p,q){ return q.prio-p.prio; });
+    var show=pool.slice(0,3);
+
+    if(!show.length){ box.innerHTML='<div class="empty">今は気づきなし。記録が増えると出ます。</div>'; return; }
+    var html="";
+    for(var s=0;s<show.length;s++){ var v=show[s];
+      html+='<div class="adv '+(v.tone==="ok"?"ok":(v.tone==="warn"?"warn":""))+'">'+
+        '<span class="albl">'+v.label+'</span>'+
+        '<div class="atx">'+v.text+'</div></div>';
+    }
+    box.innerHTML=html;
+  }
+
   function renderMgSummary(){
     var m=$("mgMonthSel").value||ym(todayStr());
     var sales=sumSalesMonth(m), expense=sumExpenseMonth(m), profit=sales-expense;
@@ -514,7 +678,7 @@ window.onerror=function(m,s,l){var e=document.getElementById("err");if(e){e.styl
     for(var i=0;i<list.length;i++){ if(String(list[i].id)!==String(id))out.push(list[i]); }
     setSales(out); Cloud.deleteTree("sales",id); refreshManage();
   }
-  function refreshManage(){ buildMgMonths(); renderMgSummary(); renderSlList(); }
+  function refreshManage(){ buildMgMonths(); renderMgSummary(); renderSlList(); advise(); }
 
   /* ---- タブ切替 ---- */
   function showMode(name){
